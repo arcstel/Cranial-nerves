@@ -4905,6 +4905,10 @@ const rim=new THREE.DirectionalLight(0x5fa0ff,0.9); rim.position.set(-30,6,-30);
 const fill=new THREE.DirectionalLight(0xffd9c0,0.5); fill.position.set(-10,-20,25); scene.add(fill);
 
 const root=new THREE.Group(); scene.add(root);
+const beam=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,1,10),
+  new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:0.85,
+    blending:THREE.AdditiveBlending,depthWrite:false,depthTest:false}));
+beam.visible=false; scene.add(beam);
 root.rotation.y = YAW*Math.PI/180;
 
 let bustSkin=null, bustBone=null, muscleMesh=null, muscleGroup=null, MODE='wire';
@@ -5016,6 +5020,18 @@ function animate(){
   if(hit!==hovered){ if(hovered) hovered.scale.setScalar(1); hovered=hit; if(hovered) hovered.scale.setScalar(1.6); }
   if(hovered) show(hovered.userData); else if(!pinned) panel.classList.remove('on');
   root.updateMatrixWorld();
+  const actNv = pinned || (hovered ? hovered.userData : null);
+  if(actNv){
+    const idx=NERVES.indexOf(actNv);
+    const mp=new THREE.Vector3(); markers[idx].getWorldPosition(mp);
+    const end=new THREE.Vector3(mp.x,-17,mp.z);
+    const d=end.clone().sub(mp); const len=d.length();
+    beam.position.copy(mp).addScaledVector(d,0.5);
+    beam.scale.set(1,len,1);
+    beam.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), d.clone().normalize());
+    beam.material.color.set(COL[actNv.type]);
+    beam.visible=true;
+  } else { beam.visible=false; }
   renderer.render(scene,camera);
 }
 
