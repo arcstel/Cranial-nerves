@@ -4770,11 +4770,11 @@ const NERVES = [
   fn:"Motor for facial expression; sensory for taste.", aff:"Controls the muscles of facial expression, taste from the front two-thirds of the tongue, and tear and saliva glands."},
  {n:"VIII",name:"Vestibulocochlear", type:"sensory", nrm:[-0.35, 0.03,-0.01],
   fn:"Sensory nerve for hearing and balance.", aff:"Two parts: the cochlear nerve carries sound, the vestibular nerve carries equilibrium and head-position sense."},
- {n:"IX",  name:"Glossopharyngeal",  type:"both",    nrm:[ 0.04,-0.24, 0.18],
+ {n:"IX",  name:"Glossopharyngeal",  type:"both",    nrm:[ 0.06,-0.30,-0.02],
   fn:"Sensory and motor nerve of the throat.", aff:"Taste from the back third of the tongue, sensation in the throat, and muscles used in swallowing and salivation."},
- {n:"X",   name:"Vagus",             type:"both",    nrm:[ 0.12,-0.46, 0.07],
+ {n:"X",   name:"Vagus",             type:"both",    nrm:[ 0.05,-0.62,-0.11],
   fn:"Longest cranial nerve; wide-ranging control.", aff:"Parasympathetic control of the heart, lungs and gut; also voice and swallowing. The only cranial nerve that wanders into the torso."},
- {n:"XI",  name:"Accessory",         type:"motor",   nrm:[ 0.14,-0.58, 0.00],
+ {n:"XI",  name:"Accessory",         type:"motor",   nrm:[ 0.08,-0.70,-0.10],
   fn:"Motor nerve for neck and shoulder.", aff:"Works the sternocleidomastoid and trapezius - head turning, neck tilt and shoulder shrugging."},
  {n:"XII", name:"Hypoglossal",       type:"motor",   nrm:[ 0.00,-0.26, 0.26],
   fn:"Motor nerve of the tongue.", aff:"Controls all intrinsic and most extrinsic tongue muscles - speech, swallowing and food manipulation."},
@@ -4882,6 +4882,7 @@ const I18N = {
 const COL = {sensory:0x4fa8ff, motor:0xff6b6b, both:0xc07bff};
 let LANG='en'; let CURRENT=null;
 const STATIC = location.search.indexOf('static') >= 0;
+const YAW = (function(){var m=location.search.match(/yaw=(-?\d+)/);return m?parseFloat(m[1]):0;})();
 const NOTM = location.search.indexOf('notm') >= 0;
 
 const canvas=document.getElementById('c');
@@ -4904,10 +4905,11 @@ const rim=new THREE.DirectionalLight(0x5fa0ff,0.9); rim.position.set(-30,6,-30);
 const fill=new THREE.DirectionalLight(0xffd9c0,0.5); fill.position.set(-10,-20,25); scene.add(fill);
 
 const root=new THREE.Group(); scene.add(root);
+root.rotation.y = YAW*Math.PI/180;
 
 let bustSkin=null, bustBone=null, muscleMesh=null, muscleGroup=null, MODE='wire';
 const S=16;                      // head height in world units
-const markers=[]; const layer=document.createElement('div'); layer.id='labelLayer'; document.body.appendChild(layer);
+const markers=[];
 function nodePos(n){ return [n[0]*S, n[1]*S, n[2]*S]; }
 
 const skinMat=new THREE.MeshStandardMaterial({color:0xd9a184,roughness:0.62,metalness:0.0});
@@ -4915,16 +4917,36 @@ const boneMat=new THREE.MeshStandardMaterial({color:0xe9e3d2,roughness:0.5,metal
 const boneGhost=new THREE.MeshStandardMaterial({color:0xe9e3d2,roughness:0.6,metalness:0.0,transparent:true,opacity:0.18,depthWrite:false});
 const wireMat=new THREE.MeshBasicMaterial({color:0x4fd0ff,wireframe:true,transparent:true,opacity:0.5});
 
+function makeLabel(text,color){
+  const cv=document.createElement('canvas'); cv.width=128; cv.height=128;
+  const g=cv.getContext('2d');
+  g.font='bold 86px -apple-system,Segoe UI,Roboto,sans-serif';
+  g.textAlign='center'; g.textBaseline='middle';
+  g.fillStyle=color; g.fillText(text,64,64);
+  const tex=new THREE.CanvasTexture(cv); tex.minFilter=THREE.LinearFilter;
+  const mat=new THREE.SpriteMaterial({map:tex,transparent:true,depthTest:true,depthWrite:false});
+  const sp=new THREE.Sprite(mat); sp.scale.set(2.4,2.4,1);
+  return sp;
+}
 function buildMarkers(){
+  const _ray=new THREE.Raycaster();
+  root.updateMatrixWorld(true);
+  function snap(p){
+    const axis=new THREE.Vector3(0,p.y,0);
+    const dir=p.clone().sub(axis); if(dir.lengthSq()<1e-9) return p; dir.normalize();
+    _ray.set(axis,dir); _ray.far=100;
+    const hits=_ray.intersectObject(bustSkin,true);
+    return hits.length ? hits[0].point.clone().addScaledVector(dir,0.4) : p;
+  }
   NERVES.forEach(nv=>{
-    const c=COL[nv.type]; const p=nodePos(nv.nrm);
-    const m=new THREE.Mesh(new THREE.SphereGeometry(0.42,16,12),new THREE.MeshBasicMaterial({color:c}));
-    m.position.set(p[0],p[1],p[2]); m.userData=nv; root.add(m); markers.push(m);
-    const halo=new THREE.Mesh(new THREE.SphereGeometry(1.05,16,12),
-      new THREE.MeshBasicMaterial({color:c,transparent:true,opacity:0.10,blending:THREE.AdditiveBlending}));
+    const c=COL[nv.type]; const p=snap(new THREE.Vector3(...nodePos(nv.nrm)));
+    const m=new THREE.Mesh(new THREE.SphereGeometry(0.26,16,12),new THREE.MeshBasicMaterial({color:c}));
+    m.position.copy(p); m.userData=nv; root.add(m); markers.push(m);
+    const halo=new THREE.Mesh(new THREE.SphereGeometry(0.42,16,12),
+      new THREE.MeshBasicMaterial({color:c,transparent:true,opacity:0.10,blending:THREE.AdditiveBlending,depthWrite:false}));
     m.add(halo);
-    const el=document.createElement('div'); el.className='lbl'; el.textContent=nv.n;
-    el.style.color='#'+c.toString(16).padStart(6,'0'); layer.appendChild(el); nv._el=el;
+    const spr=makeLabel(nv.n,'#'+c.toString(16).padStart(6,'0'));
+    spr.position.set(0,1.0,0); m.add(spr);
   });
 }
 function setMode(m){
@@ -4950,7 +4972,7 @@ new THREE.GLTFLoader().parse(b64buf(GLB_B64), '', gltf=>{
     mg.scene.scale.setScalar(S);
     muscleGroup=mg.scene;
     root.add(mg.scene);
-    buildMarkers(); setMode(MODE);
+    buildMarkers(); setMode(MODE); window.__m=markers; window.__bust=bustSkin;
     const ld=document.getElementById('load'); if(ld) ld.remove();
   }, undefined, err=>{ console.error(err); });
 }, undefined, err=>{ const l=document.getElementById('load'); if(l) l.textContent='LOAD FAILED'; console.error(err); });
@@ -4987,19 +5009,13 @@ canvas.addEventListener('pointerup',e=>{ upd(e); const h=pick();
   if(h){ pinned=h.userData; show(pinned);} else { pinned=null; panel.classList.remove('on'); } });
 
 const tmp=new THREE.Vector3();
+const labelRay=new THREE.Raycaster();
 function animate(){
   requestAnimationFrame(animate); controls.update();
   const hit=pick();
   if(hit!==hovered){ if(hovered) hovered.scale.setScalar(1); hovered=hit; if(hovered) hovered.scale.setScalar(1.6); }
   if(hovered) show(hovered.userData); else if(!pinned) panel.classList.remove('on');
   root.updateMatrixWorld();
-  NERVES.forEach((nv,i)=>{
-    const m=markers[i]; if(!m) return;
-    m.getWorldPosition(tmp).project(camera);
-    const sx=(tmp.x*0.5+0.5)*innerWidth, sy=(-tmp.y*0.5+0.5)*innerHeight;
-    nv._el.style.left=sx+'px'; nv._el.style.top=(sy-17)+'px';
-    nv._el.style.opacity=(tmp.z>1)?0:0.95;
-  });
   renderer.render(scene,camera);
 }
 
